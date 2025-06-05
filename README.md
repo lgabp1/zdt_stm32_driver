@@ -20,6 +20,7 @@ A README.md file can be found in each of these folders to provide additionnal in
 ## Known issues
 * Docstring should be improved.
 * A better way to check if CAN handler is already initialized should be implemented.
+* As for now, only support FD-CAN-compatible devices (because of types).
 
 ## Contributing
 Beside the issues cited above, it would be great to add support for more ZDT stepmotor controllers and their commands. I expect most of the commands to be mostly similar between the different controllers, so it should be fairly easy to add support for them but I have only access to the Emm_V5.0 controller.
