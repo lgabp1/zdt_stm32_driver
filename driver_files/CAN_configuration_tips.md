@@ -6,9 +6,17 @@ This document summarizes the key steps for configuring CAN on a STM32CubeIDE pro
 
 Please first unsure you have access to a STM32 MCU which supports CAN (only Classical CAN is required for this driver), with a CAN Controller. This controller may be included in the STM32-based board (like in the DM-MC02 board used for the development of this driver) 
 
+Here is an example setup
+![CAN_wiring](https://github.com/user-attachments/assets/7eae15e4-4bc5-467f-b3f1-62295b4c276d)
+
+
 **Clock config**
 
 What matters here is to what value **To FDCAN** or **To CAN** frequency is set. It can be set to any value, the simplest setup being to use the HSE clock directly, but not mandatory.
+
+For example:
+![fdcan_clock_config](https://github.com/user-attachments/assets/8906850f-60c0-4e60-a12f-2969f4e9e733)
+
 
 Please take note of this value. e.g. $f_{To FDCAN} = 80MHz$
 
