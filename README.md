@@ -13,11 +13,12 @@ This repository provides several resources:
 A README.md file can be found in each of these folders to provide additionnal information.
 
 ## Features
-* Checksums which are not Checksums.CS0x6B checksums are not implemented yet.
-* Issue with ZDT_cmd_M_M_synchronized_motion where broadcasting the "Go" message does not work.
 * Full implementation of all functions described in [Emm_V5.0 Manual Rev1.3]((https://blog.csdn.net/zhangdatou666/article/details/132644047)), and support for multiple such devices at once.
 
+
 ## Known issues
+* Checksums which are not ZDT_CS0x6B and ZDT_CSXOR checksums are not implemented yet.
+* Issue with ZDT_cmd_M_M_synchronized_motion where broadcasting the "Go" message does not work.
 * Docstring should be improved.
 * A better way to check if CAN handler is already initialized should be implemented.
 * As for now, only support FD-CAN-compatible devices (because of types).

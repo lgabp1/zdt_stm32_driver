@@ -77,13 +77,14 @@ FDCAN_TxHeaderTypeDef CAN_get_header_template();
  *
  * @param hfdcan Pointer to an FDCAN_HandleTypeDef structure.
  * @param can_id The CAN identifier to be used for the message.
+ * @param timeout Maximum wait time in milliseconds; negative values wait indefinitely.
  * @param is_extended_id Flag indicating whether the CAN ID is extended (true) or standard (false).
  * @param TxData Pointer to the data buffer containing the message data to be sent.
  * @param size The size of the data buffer in bytes.
  *
  * @return HAL_StatusTypeDef HAL_StatusTypeDef HAL_OK on success, or HAL_ERROR on processing error.
  */
-HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, bool is_extended_id, uint8_t *TxData, uint8_t size); // Send CAN message
+HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, int timeout, uint32_t can_id, bool is_extended_id, uint8_t *TxData, uint8_t size); // Send CAN message
 
 /**
  * @brief Receives a CAN message with an optional timeout.
@@ -100,7 +101,7 @@ HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, bool is
  *
  * @return HAL_StatusTypeDef HAL_StatusTypeDef HAL_OK on success, HAL_TIMEOUT on timeout, or HAL_ERROR on processing error.
  */
-HAL_StatusTypeDef CAN_receive_from(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, int timeout, uint8_t *RxData, FDCAN_RxHeaderTypeDef *RxHeader); // Receive CAN message
+HAL_StatusTypeDef CAN_receive_from(FDCAN_HandleTypeDef *hfdcan, int timeout, uint32_t can_id, uint8_t *RxData, FDCAN_RxHeaderTypeDef *RxHeader); // Receive CAN message
 
 /* === Call wrappers === */
 

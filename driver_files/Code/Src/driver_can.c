@@ -62,9 +62,10 @@ FDCAN_TxHeaderTypeDef CAN_get_header_template() {
 /*
  * Sends a CAN message and blocks until the message is sent.
  */
-HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, bool is_extended_id, uint8_t *TxData, uint8_t size)
+HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, int timeout, uint32_t can_id, bool is_extended_id, uint8_t *TxData, uint8_t size)
 {
 	HAL_StatusTypeDef ret;
+	uint32_t tickstart = HAL_GetTick();
 
 	/* Configure default template */
 	CANTxHeaderTemplate.Identifier = can_id;
@@ -84,7 +85,9 @@ HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, bool is
 
 	/* Polling for transmission complete on buffer */
 	while(HAL_FDCAN_IsTxBufferMessagePending(hfdcan, CAN_TX_BUFFER_USED) == 1) {
-		__NOP();
+		if ( timeout >= 0 && (HAL_GetTick() - tickstart) > timeout) {
+			return HAL_TIMEOUT; // Raise timeout
+		}
 	}
 	return HAL_OK;
 }
@@ -92,7 +95,7 @@ HAL_StatusTypeDef CAN_send(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, bool is
 /*
  * Receives a CAN message from given can_id with an optional timeout.
  */
-HAL_StatusTypeDef CAN_receive_from(FDCAN_HandleTypeDef *hfdcan, uint32_t can_id, int timeout, uint8_t *RxData, FDCAN_RxHeaderTypeDef *RxHeader)
+HAL_StatusTypeDef CAN_receive_from(FDCAN_HandleTypeDef *hfdcan, int timeout, uint32_t can_id, uint8_t *RxData, FDCAN_RxHeaderTypeDef *RxHeader)
 {
 	HAL_StatusTypeDef ret;
 	uint32_t tickstart = HAL_GetTick();
@@ -168,7 +171,7 @@ HAL_StatusTypeDef CAN_start(FDCAN_HandleTypeDef *hfdcan, uint32_t *RxCANIds, uin
 	HAL_StatusTypeDef ret;
 	if (CANRxQueuesCount + CANIdsCount < 1) {return 1;} // At least 1 id should be whitelisted !
 
-	if (CANRxQueuesCount == 0) { // First init // TODO: here, it only supports 1 CAN handler
+	if (!(hfdcan->State == HAL_FDCAN_STATE_BUSY)) { // First init
 		ret = HAL_FDCAN_Start(hfdcan);
 		if (ret != HAL_OK) {
 			return ret;

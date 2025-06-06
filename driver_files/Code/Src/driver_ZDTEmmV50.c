@@ -26,7 +26,7 @@ void *cpy_le(void *dest, const void *src, size_t type_size)
 }
 
 /*
- * Compute corresponding checksum //TODO: implement other checksums, ajouter mot_id danas le calcul !
+ * Compute corresponding checksum //TODO: implement other checksums
  */
 int _ZDT_compute_checksum(ZDT_Handler *zdthdl, uint8_t *data, uint8_t size, uint8_t *cs_value)
 {
@@ -36,7 +36,13 @@ int _ZDT_compute_checksum(ZDT_Handler *zdthdl, uint8_t *data, uint8_t size, uint
 			*cs_value = 0x6BU;
 			return 0;
 		case ZDT_CSXOR:
-			return 1;
+			uint8_t checksum = 0;
+	        checksum ^= zdthdl->mot_id;
+	        for (uint8_t i=0; i<size; i++) {
+	        	checksum ^= data[i];
+	        }
+	        *cs_value = checksum;
+			return 0;
 		case ZDT_CSCRC8:
 			return 1;
 		case ZDT_CSModbus:
@@ -76,6 +82,18 @@ ZDT_ReturnCode ZDT_CAN_setup(ZDT_Handler *zdthdl)
 	{
 	  Error_Handler();
 	}
+
+	return ZDT_OK;
+}
+
+/*
+ * Wrapper for CAN_send made for ZDT handler with timeout
+ */
+ZDT_ReturnCode ZDT_CAN_send_timeout(ZDT_Handler *zdthdl, int timeout, uint32_t can_id, uint8_t *TxData, uint8_t size)
+{
+	HAL_StatusTypeDef ret;
+	ret = CAN_send( (zdthdl->hfdcan), timeout, can_id, true, TxData, size);
+	if (ret == HAL_TIMEOUT) {return ZDT_TIMEOUT;} else if (ret != HAL_OK) {return ZDT_ERROR;}
 	return ZDT_OK;
 }
 
@@ -84,10 +102,7 @@ ZDT_ReturnCode ZDT_CAN_setup(ZDT_Handler *zdthdl)
  */
 ZDT_ReturnCode ZDT_CAN_send(ZDT_Handler *zdthdl, uint32_t can_id, uint8_t *TxData, uint8_t size)
 {
-	HAL_StatusTypeDef ret;
-	ret = CAN_send( (zdthdl->hfdcan), can_id, true, TxData, size);
-	if (ret != HAL_OK) {return ZDT_ERROR;}
-	return ZDT_OK;
+	return ZDT_CAN_send_timeout(zdthdl, (zdthdl->send_timeout), can_id, TxData, size);
 }
 
 /*
@@ -97,8 +112,8 @@ ZDT_ReturnCode ZDT_CAN_receive_from_timeout(ZDT_Handler *zdthdl, uint32_t timeou
 {
 	HAL_StatusTypeDef ret; FDCAN_RxHeaderTypeDef RxHeaderBuff;
 
-	ret = CAN_receive_from( (zdthdl->hfdcan), can_id, timeout, RxData, &RxHeaderBuff);
-	if (ret != HAL_OK) {return ZDT_ERROR;}
+	ret = CAN_receive_from( (zdthdl->hfdcan), timeout, can_id, RxData, &RxHeaderBuff);
+	if (ret == HAL_TIMEOUT) {return ZDT_TIMEOUT;} else if (ret != HAL_OK) {return ZDT_ERROR;}
 	ret = _CAN_from_DLC_to_SIZE(RxHeaderBuff.DataLength, size);
 	if (ret != HAL_OK) {return ZDT_ERROR;}
 
@@ -149,11 +164,11 @@ ZDT_ReturnCode ZDT_cmd_trigger_CAL(ZDT_Handler *zdthdl)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -178,11 +193,11 @@ ZDT_ReturnCode ZDT_cmd_reset_position_to_0(ZDT_Handler *zdthdl)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -207,11 +222,11 @@ ZDT_ReturnCode ZDT_cmd_release_stall_protection(ZDT_Handler *zdthdl)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -237,11 +252,11 @@ ZDT_ReturnCode ZDT_cmd_factory_reset(ZDT_Handler *zdthdl)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -266,11 +281,11 @@ ZDT_ReturnCode ZDT_cmd_read_firmware_and_hardware_version(ZDT_Handler *zdthdl, u
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 4) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -297,11 +312,11 @@ ZDT_ReturnCode ZDT_cmd_read_phase_resistance_and_inductance(ZDT_Handler *zdthdl,
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 6) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -328,14 +343,14 @@ ZDT_ReturnCode ZDT_cmd_read_position_PID_parameters(ZDT_Handler *zdthdl, uint32_
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize); // First message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x21)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x21)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[0], &RxBuff[0], 8); // Fill full data buffer, include function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, RxBuff, &RxSize); // Second message
-	if ((ret) || (RxSize < 7) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x21)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 7) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x21)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[8], &RxBuff[1], 6); // Fill full data buffer, exclude function code
 
 	if (_ZDT_check_checksum(zdthdl, RxDataBuff, 14))
@@ -362,17 +377,17 @@ ZDT_ReturnCode ZDT_cmd_read_homing_parameters(ZDT_Handler *zdthdl, ZDT_HomingPar
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize); // First message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[0], &RxBuff[0], 8); // Fill full data buffer, include function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, RxBuff, &RxSize); // Second message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[8], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, RxBuff, &RxSize); // Third message
-	if ((ret) || (RxSize < 3) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 3) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x22)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[15], &RxBuff[1], 2); // Fill full data buffer, exclude function code
 
 	if (_ZDT_check_checksum(zdthdl, RxDataBuff, 17))
@@ -404,11 +419,11 @@ ZDT_ReturnCode ZDT_cmd_read_bus_voltage(ZDT_Handler *zdthdl, uint16_t *voltage)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 4) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -434,11 +449,11 @@ ZDT_ReturnCode ZDT_cmd_read_phase_current(ZDT_Handler *zdthdl, uint16_t *current
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 4) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -464,11 +479,11 @@ ZDT_ReturnCode ZDT_cmd_read_CAL_encoder_value(ZDT_Handler *zdthdl, uint16_t *lin
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 4) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -494,11 +509,11 @@ ZDT_ReturnCode ZDT_cmd_read_input_pulse_count(ZDT_Handler *zdthdl, ZDT_Dir *dir,
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 6) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -525,11 +540,11 @@ ZDT_ReturnCode ZDT_cmd_read_closed_loop_target_position(ZDT_Handler *zdthdl, ZDT
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 7) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -556,11 +571,11 @@ ZDT_ReturnCode ZDT_cmd_read_open_loop_target_position(ZDT_Handler *zdthdl, ZDT_D
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 7) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -587,11 +602,11 @@ ZDT_ReturnCode ZDT_cmd_read_current_speed(ZDT_Handler *zdthdl, ZDT_Dir *dir, uin
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 5) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -618,11 +633,11 @@ ZDT_ReturnCode ZDT_cmd_read_current_position(ZDT_Handler *zdthdl, ZDT_Dir *dir, 
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 7) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -649,11 +664,11 @@ ZDT_ReturnCode ZDT_cmd_read_current_position_error(ZDT_Handler *zdthdl, ZDT_Dir 
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 7) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -680,11 +695,11 @@ ZDT_ReturnCode ZDT_cmd_read_motor_status_flags(ZDT_Handler *zdthdl, ZDT_MotorSta
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -714,11 +729,11 @@ ZDT_ReturnCode ZDT_cmd_read_homing_status_flags(ZDT_Handler *zdthdl, ZDT_HomingS
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -748,23 +763,23 @@ ZDT_ReturnCode ZDT_cmd_read_drive_config_parameters(ZDT_Handler *zdthdl, ZDT_Dri
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize); // First message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[0], &RxBuff[0], 8); // Fill full data buffer, include function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, RxBuff, &RxSize); // Second message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[8], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, RxBuff, &RxSize); // Third message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[15], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 3, RxBuff, &RxSize); // Fourth message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[22], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 4, RxBuff, &RxSize); // Fifth message
-	if ((ret) || (RxSize < 4) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 4) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x42)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[29], &RxBuff[1], 3); // Fill full data buffer, exclude function code
 
 	if (_ZDT_check_checksum(zdthdl, RxDataBuff, 32))
@@ -816,25 +831,25 @@ ZDT_ReturnCode ZDT_cmd_read_system_status_parameters(ZDT_Handler *zdthdl, ZDT_Sy
 	} // Clear message queues used by this device
 
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	HAL_Delay(2000);
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize); // First message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[0], &RxBuff[0], 8); // Fill full data buffer, include function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, RxBuff, &RxSize); // Second message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[8], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, RxBuff, &RxSize); // Third message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[15], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 3, RxBuff, &RxSize); // Fourth message
-	if ((ret) || (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 8) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[22], &RxBuff[1], 7); // Fill full data buffer, exclude function code
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 4, RxBuff, &RxSize); // Fifth message
-	if ((ret) || (RxSize < 2) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
+	if (ret != ZDT_OK) {return ret;} else if ( (RxSize < 2) || ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) || (RxBuff[0] != 0x43)) {return ZDT_ERROR;} // Error or too tiny or Error message or wrong function code
 	memcpy(&RxDataBuff[29], &RxBuff[1], 1); // Fill full data buffer, exclude function code
 
 	if (_ZDT_check_checksum(zdthdl, RxDataBuff, 30))
@@ -884,11 +899,11 @@ ZDT_ReturnCode ZDT_cmd_edit_open_loop_operating_current(ZDT_Handler *zdthdl, boo
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 6);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -915,11 +930,11 @@ ZDT_ReturnCode ZDT_cmd_switch_open_loop_closed_loop(ZDT_Handler *zdthdl, bool do
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -973,23 +988,23 @@ ZDT_ReturnCode ZDT_cmd_edit_drive_config_parameters(ZDT_Handler *zdthdl, bool do
 	payload[0] = TxDataBuff[0];
 	memcpy(&payload[1], &TxDataBuff[1], 7); // First payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[8], 7);// Second payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[15], 7);// Third payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[22], 7);// Fourth payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 3, payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[29], 3);// Fifth payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 4, payload, 4);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1021,17 +1036,17 @@ ZDT_ReturnCode ZDT_cmd_edit_position_PID_parameters(ZDT_Handler *zdthdl, bool do
 	payload[0] = TxDataBuff[0];
 	memcpy(&payload[1], &TxDataBuff[1], 7); // First payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[8], 7);// Second payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[15], 1);// Third payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1068,17 +1083,17 @@ ZDT_ReturnCode ZDT_cmd_edit_homing_parameters(ZDT_Handler *zdthdl, bool do_store
 	payload[0] = TxDataBuff[0];
 	memcpy(&payload[1], &TxDataBuff[1], 7); // First payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[8], 7);// Second payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[15], 4);// Third payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 2, payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1105,11 +1120,11 @@ ZDT_ReturnCode ZDT_cmd_allow_divide10_on_com_speed_cmd(ZDT_Handler *zdthdl, bool
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1136,11 +1151,11 @@ ZDT_ReturnCode ZDT_cmd_edit_microstep(ZDT_Handler *zdthdl,  bool do_store, uint8
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1166,11 +1181,11 @@ ZDT_ReturnCode ZDT_cmd_set_0_position_homing(ZDT_Handler *zdthdl, bool do_store)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 4);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1197,11 +1212,11 @@ ZDT_ReturnCode ZDT_cmd_trigger_homing(ZDT_Handler *zdthdl, ZDT_HomMode hom_mode,
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 4);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1227,11 +1242,11 @@ ZDT_ReturnCode ZDT_cmd_interrupt_homing(ZDT_Handler *zdthdl)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1259,11 +1274,11 @@ ZDT_ReturnCode ZDT_cmd_edit_ID_address(ZDT_Handler *zdthdl, bool do_store, uint8
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1291,11 +1306,11 @@ ZDT_ReturnCode ZDT_cmd_motor_enable_control(ZDT_Handler *zdthdl, bool do_enable,
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1324,11 +1339,11 @@ ZDT_ReturnCode ZDT_cmd_speed_mode_control(ZDT_Handler *zdthdl, ZDT_Dir dir, uint
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 7);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1362,14 +1377,14 @@ ZDT_ReturnCode ZDT_cmd_auto_run_on_power_on(ZDT_Handler *zdthdl, ZDT_Dir dir, ui
 	payload[0] = TxDataBuff[0];
 	memcpy(&payload[1], &TxDataBuff[1], 7); // First payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[8], 1);// Second payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, payload, 2);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1404,14 +1419,14 @@ ZDT_ReturnCode ZDT_cmd_position_mode_control(ZDT_Handler *zdthdl, ZDT_Dir dir, u
 	payload[0] = TxDataBuff[0];
 	memcpy(&payload[1], &TxDataBuff[1], 7); // First payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 8);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 	memcpy(&payload[1], &TxDataBuff[8], 4);// Second payload
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8) + 1, payload, 5);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1438,11 +1453,11 @@ ZDT_ReturnCode ZDT_cmd_immediate_stop(ZDT_Handler *zdthdl, bool m_m_flag)
 	/* Send command */
 	if (ZDT_CAN_clear_queues_of(zdthdl->mot_id)) {return ZDT_ERROR;} // Clear message queues used by this device
 	ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 4);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1473,11 +1488,11 @@ ZDT_ReturnCode ZDT_cmd_M_M_synchronized_motion(ZDT_Handler *zdthdl, bool do_broa
 	} else {
 		ret = ZDT_CAN_send(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), payload, 3);
 	}
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from(zdthdl, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
@@ -1499,7 +1514,7 @@ ZDT_ReturnCode ZDT_receive_reached_message(ZDT_Handler *zdthdl, uint32_t timeout
 	ZDT_ReturnCode ret; uint8_t RxBuff[8]; uint8_t RxSize;
 	/* Read return message(s) */
 	ret = ZDT_CAN_receive_from_timeout(zdthdl, timeout, (((uint32_t)(zdthdl->mot_id)) <<8), RxBuff, &RxSize);
-	if (ret) {return ZDT_ERROR;}
+	if (ret != ZDT_OK) {return ret;}
 
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message

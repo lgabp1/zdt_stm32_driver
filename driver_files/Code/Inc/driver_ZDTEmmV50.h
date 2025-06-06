@@ -17,6 +17,7 @@ typedef enum /* Return codes from ZDT related commands */
   ZDT_OK                 = 0x00,
   ZDT_ERROR              = 0x01,
   ZDT_CONDITIONS_NOT_MET = 0x02,
+  ZDT_TIMEOUT 			 = 0x03,
 } ZDT_ReturnCode;
 
 typedef enum /* Checksum types */
@@ -31,7 +32,7 @@ typedef struct { /* ZDT handler object */
 	FDCAN_HandleTypeDef *hfdcan; // FDCAN_HandleTypeDef structure handling the CAN connection
 	uint8_t mot_id;             // ID of the motor
 	ZDT_Checksum checksum;       // Checksum to use when communicating
-	//int send_timeout;           // Timeout used when sending commands // TODO Unused for now
+	int send_timeout;           // Timeout used when sending commands
 	int receive_timeout;        // Timeout used when receiving commands
 } ZDT_Handler;
 
@@ -128,7 +129,7 @@ typedef struct { /* System Status Parameters, used in 0x43 (read) command. */
 /* === Misc function prototypes === */
 void *cpy_le(void *dest, const void *src, size_t type_size); // memcpy with byte swapping (Little-endian system vs big-endian CAN data)
 ZDT_ReturnCode ZDT_CAN_setup(ZDT_Handler *zdthdl); // Init ZDT object and related CAN config. Should be used for each ZDT_Handler used.
-ZDT_ReturnCode ZDT_CAN_send(ZDT_Handler *zdthdl, uint32_t can_id, uint8_t *TxData, uint8_t size) ; // Wrapper for CAN_send made for ZDT handler
+ZDT_ReturnCode ZDT_CAN_send(ZDT_Handler *zdthdl, uint32_t can_id, uint8_t *TxData, uint8_t size); // Wrapper for CAN_send made for ZDT handler
 ZDT_ReturnCode ZDT_CAN_receive_from(ZDT_Handler *zdthdl, uint32_t can_id, uint8_t *RxData, uint8_t *size); // Wrapper for CAN_receive made for ZDT handler /* TODO Should also check for mot id, and loop like that ! */
 ZDT_ReturnCode ZDT_CAN_clear_queues_of(uint8_t mot_id); // Clear all message queues of given mot_id
 
@@ -170,7 +171,6 @@ ZDT_ReturnCode ZDT_cmd_interrupt_homing(ZDT_Handler *zdthdl); // Command 0x9C
 ZDT_ReturnCode ZDT_cmd_edit_ID_address(ZDT_Handler *zdthdl, bool do_store, uint8_t new_mot_id); // Command 0xAE
 ZDT_ReturnCode ZDT_cmd_motor_enable_control(ZDT_Handler *zdthdl, bool do_enable, bool m_m_flag); // Command 0xF3
 ZDT_ReturnCode ZDT_cmd_speed_mode_control(ZDT_Handler *zdthdl, ZDT_Dir dir, uint16_t speed, uint8_t accel_level, bool m_m_flag); // Command 0xF6
-/* Under: to test */
 ZDT_ReturnCode ZDT_cmd_auto_run_on_power_on(ZDT_Handler *zdthdl, ZDT_Dir dir, uint8_t store_clear_flag, uint16_t speed, uint8_t accel_level, bool do_en_pin_control); // Command // TODO store_clear_flag?
 ZDT_ReturnCode ZDT_cmd_position_mode_control(ZDT_Handler *zdthdl, ZDT_Dir dir, uint32_t pulse_count, uint16_t speed, uint8_t accel_level, bool is_relative, bool m_m_flag); // Command 0xFD
 ZDT_ReturnCode ZDT_cmd_immediate_stop(ZDT_Handler *zdthdl, bool m_m_flag); // Command 0xFE
