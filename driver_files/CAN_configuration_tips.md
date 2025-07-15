@@ -47,7 +47,7 @@ Depending on which port to use, the user can select the corresponding pins.
 For example, to use CAN1 port
     * Connectivity/FDCAN1
         * Activated = Check
-    * Verify used pins (CAN TX/ CAN RX) according to datasheet ! For the DMMC-02 board for CAN1, use PD1 and PD2 pins. One may move the pins with Ctrl+Click and dragging it.
+    * Verify used pins (CAN TX/ CAN RX) according to datasheet ! For the DMMC-02 board for CAN1, use PD0 and PD1 pins. One may move the pins with Ctrl+Click and dragging it.
 
 **FDCAN config**
 
@@ -65,6 +65,8 @@ For example, to use CAN1 port
 Please set the timing configurations according to the values obtained from the previous section as well, and please note that `Nominal Baud Rate` should now have the target bitrate value. 
 
 The other parameters can be set to default values, and changed if need be.
+
+Finally, please enable any interrupt in `NVIC Settings/FDCAN* interrupt *`
 
 **Wiring**
 

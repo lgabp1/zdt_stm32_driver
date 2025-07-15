@@ -1519,7 +1519,7 @@ ZDT_ReturnCode ZDT_receive_reached_message(ZDT_Handler *zdthdl, uint32_t timeout
 	if (RxSize < 3) {return ZDT_ERROR;} // Too tiny
 	if ((RxBuff[0] == 0x00) && (RxBuff[1] == 0xEE)) {return ZDT_ERROR;} // Manual check: Error return message
 	if ((RxBuff[0] == 0xFF) && (RxBuff[1] == 0xE2)) {return ZDT_CONDITIONS_NOT_MET;} // Manual check: Condition not met return message
-	if (RxBuff[0] == 0xFF && RxBuff[1] == 0x02 && _ZDT_check_checksum(zdthdl, RxBuff, 3))
+	if (RxBuff[0] == 0xFD && RxBuff[1] == 0x9F && _ZDT_check_checksum(zdthdl, RxBuff, 3))
 	{
 		return ZDT_OK;
 	} else {
